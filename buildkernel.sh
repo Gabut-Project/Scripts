@@ -71,8 +71,8 @@ function build_clang()
 #设备名
 function work_zip()
 {
-  git clone https://github.com/wloot/AnyKernel3
-  ZIPNAME=JFla-Karamel-${TRAVIS_BUILD_NUMBER}-${1}-AOSP-${GITHEAD}.zip
+  git clone https://github.com/nadinsyllaa/AnyKernel3
+  ZIPNAME=JFla-karamel-${TRAVIS_BUILD_NUMBER}-${1}-MIUI-${GITHEAD}.zip
   cp ${OUT_DIR}/arch/arm64/boot/Image.gz-dtb AnyKernel3
   cd AnyKernel3
   zip -r ${ZIPNAME} *
@@ -80,3 +80,69 @@ function work_zip()
   rm ${ZIPNAME} Image.gz-dtb
   cd $(dirname "$PWD")
 }
+
+#文件路径
+function telegram_upload()
+{
+  curl -s https://api.telegram.org/bot"${BOTTOKEN}"/sendDocument -F document=@"${1}" -F chat_id="${CHATID}"
+}
+
+#消息内容
+function telegram_notify()
+{
+  curl -s https://api.telegram.org/bot"${BOTTOKEN}"/sendMessage -d parse_mode="Markdown" -d text="${1}" -d chat_id="${CHATID}"
+}
+function errored()
+{
+  telegram_notify "${1}"
+  exit 1
+}
+
+function pickcommit()
+{
+  git add .
+  git cherry-pick --no-commit "${1}"
+  if [ "$?" != "0" ]; then
+    errored "打补丁失败 ${1}"
+  fi
+}
+
+####################################
+#   sagit and chiron build for travis ci   #
+####################################
+
+cd ${HOME}
+if [[ "$@" =~ "gcc" ]]; then
+  clone_gcc
+fi
+if [[ "$@" =~ "clang" ]]; then
+  clone_custom_clang
+  export LD_LIBRARY_PATH="${CLANG_PATH}/lib:${CLANG_PATH}/lib64:$LD_LIBRARY_PATH"
+  export PATH="${CLANG_PATH}/bin:$PATH"
+fi
+
+OUT_DIR=${HOME}/out
+START=$(date +"%s")
+cd ${TRAVIS_BUILD_DIR}
+#git fetch https://$GITID:$GITPWD@github.com/wloot/tmp.git idv3p
+#pickcommit efbf36a60e55f8ed551d1b7ad5c10eff1caa7f7c
+GITHEAD=$(git rev-parse --short HEAD)
+
+if [[ "$@" =~ "clang" ]]; then
+  telegram_notify "开始新的构建#${DRONE_BUILD_NUMBER}， 使用${CLANG_VERSION}编译中。。。。"
+  build_clang ${OUT_DIR} sagit
+else
+  telegram_notify "开始新的构建#${DRONE_BUILD_NUMBER}， 使用${GCC_VERSION}编译中。。。。"
+  build_gcc ${OUT_DIR} sagit
+fi
+work_zip sagit
+
+if [[ "$@" =~ "clang" ]]; then
+  build_clang ${OUT_DIR} chiron
+else
+  build_gcc ${OUT_DIR} chiron
+fi
+work_zip chiron
+END=$(date +"%s")
+KDURTION=$((END - START))
+telegram_notify "实时构建完毕， 耗时 $((KDURTION / 60)) 分 $((KDURTION % 60)) 秒"
